@@ -26,8 +26,6 @@ def find_fits_keyword(schema, keyword, return_result=False):
     """
 
     def find_fits_keyword(subschema, path, combiner, ctx, recurse):
-        if len(path) and path[0] == "extra_fits":
-            return True
         if subschema.get("fits_keyword") == keyword:
             results.append(".".join(path))
 

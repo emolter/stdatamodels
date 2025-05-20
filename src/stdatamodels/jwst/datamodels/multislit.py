@@ -71,7 +71,7 @@ class MultiSlitModel(JwstDataModel):
             kwargs = {}
             items = dict(slit.items())
             for key in items:
-                if not key.startswith(("meta", "extra_fits")):
+                if not key.startswith("meta"):
                     kwargs[key] = items[key]
             s = SlitModel(**kwargs)
             s.update(self)

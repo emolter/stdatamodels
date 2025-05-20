@@ -82,6 +82,7 @@ def test_from_scratch(tmp_path):
 
 
 def test_extra_fits(tmp_path):
+    """Test that FITS information that is not in the schema is preserved during read-write."""
     file_path = tmp_path / "test.fits"
 
     with FitsModel() as dm:
@@ -94,7 +95,8 @@ def test_extra_fits(tmp_path):
         hdul.writeto(file_path2, overwrite=True)
 
     with DataModel(file_path2) as dm:
-        assert any(h for h in dm.extra_fits.PRIMARY.header if h == ["FOO", "BAR", ""])
+        with pytest.warns(UserWarning):
+            assert dm.hdulist[0].header["FOO"] == "BAR"
 
 
 def test_hdu_order(tmp_path):

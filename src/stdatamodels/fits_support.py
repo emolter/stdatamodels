@@ -496,20 +496,6 @@ def _normalize_arrays(tree):
     return treeutil.walk_and_modify(tree, normalize_array)
 
 
-def _save_extra_fits(hdulist, tree):
-    # Handle _extra_fits
-    for hdu_name, parts in tree.get("extra_fits", {}).items():
-        if "data" in parts:
-            hdu_type = _get_hdu_type(hdu_name, value=parts["data"])
-            hdu = _get_or_make_hdu(hdulist, hdu_name, hdu_type=hdu_type, value=parts["data"])
-        if "header" in parts:
-            hdu = _get_or_make_hdu(hdulist, hdu_name)
-            for key, val, comment in parts["header"]:
-                if is_builtin_fits_keyword(key):
-                    continue
-                hdu.header.append((key, val, comment), end=True)
-
-
 def _save_history(hdulist, tree):
     if "history" not in tree:
         return
@@ -519,6 +505,8 @@ def _save_history(hdulist, tree):
         history = tree["history"]
     else:
         history = tree["history"].get("entries", [])
+
+    # print("tree history", tree["history"])
 
     for i in range(len(history)):
         # There is no guarantee the user has added proper HistoryEntry records
@@ -554,8 +542,9 @@ def to_fits(tree, schema, hdulist=None):
 
     tree = _normalize_arrays(tree)
     tree = _save_from_schema(hdulist, tree, schema)
-    _save_extra_fits(hdulist, tree)
+    # print(hdulist[0].header["HISTORY"])
     _save_history(hdulist, tree)
+    # print(hdulist[0].header["HISTORY"])
 
     # Store the FITS hash in the tree
     tree[FITS_HASH_KEY] = fits_hash(hdulist)
@@ -734,30 +723,6 @@ def _load_from_schema(
     return known_keywords, known_datas
 
 
-def _load_extra_fits(hdulist, known_keywords, known_datas, tree):
-    # Remove any extra_fits from tree
-    if "extra_fits" in tree:
-        del tree["extra_fits"]
-
-    # Add header keywords and data not in schema to extra_fits
-    for hdu in hdulist:
-        # Don't add ASDF hdus to extra_fits for any reason
-        if hdu.name != "ASDF":
-            known = known_keywords.get(hdu, set())
-
-            cards = []
-            for key, val, comment in hdu.header.cards:
-                if not (is_builtin_fits_keyword(key) or key in known):
-                    cards.append([key, val, comment])
-
-            if len(cards):
-                properties.put_value(["extra_fits", hdu.name, "header"], cards, tree)
-
-            if hdu not in known_datas:
-                if hdu.data is not None:
-                    properties.put_value(["extra_fits", hdu.name, "data"], hdu.data, tree)
-
-
 def _load_history(hdulist, tree):
     try:
         hdu = get_hdu(hdulist, 0)
@@ -805,8 +770,6 @@ def from_fits(hdulist, schema, context, **kwargs):
     known_keywords, known_datas = _load_from_schema(
         hdulist, schema, ff.tree, context, skip_fits_update=skip_fits_update
     )
-    if not skip_fits_update:
-        _load_extra_fits(hdulist, known_keywords, known_datas, ff.tree)
 
     _load_history(hdulist, ff.tree)
 

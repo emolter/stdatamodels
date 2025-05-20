@@ -225,6 +225,7 @@ class DataModel(properties.ObjectNode):
 
         elif isinstance(init, fits.HDUList):
             init = self._migrate_hdulist(init)
+            self._hdulist = init
             asdffile = fits_support.from_fits(init, self._schema, self._ctx, **kwargs)
 
         elif isinstance(init, (str, PurePath)):
@@ -234,6 +235,7 @@ class DataModel(properties.ObjectNode):
                 hdulist = fits.open(init, memmap=memmap)
                 self._file_references.append(_FileReference(hdulist))
                 hdulist = self._migrate_hdulist(hdulist)
+                self._hdulist = hdulist
                 asdffile = fits_support.from_fits(hdulist, self._schema, self._ctx, **kwargs)
 
             elif file_type == "asdf":
@@ -323,6 +325,25 @@ class DataModel(properties.ObjectNode):
         # collect and could reopen the memory leak issues fixed in
         # https://github.com/spacetelescope/stdatamodels/pull/109
         return self
+
+    @property
+    def hdulist(self):
+        """
+        Get the HDUList object for this model.
+
+        some warning here about why you shouldn't try to directly access this
+        """  # numpydoc ignore=RT01
+        warnings.warn("whatever", UserWarning, stacklevel=2)
+        return self._hdulist
+
+    @hdulist.setter
+    def hdulist(self, value):
+        """
+        Set the HDUList object for this model.
+
+        this should raise an error?
+        """
+        raise AttributeError("hdulist is read-only")
 
     @property
     def crds_observatory(self):
@@ -727,7 +748,8 @@ class DataModel(properties.ObjectNode):
         """
         self.on_save(init)
 
-        hdulist = fits_support.to_fits(self._instance, self._schema)
+        existing_hdul = getattr(self, "_hdulist", None)
+        hdulist = fits_support.to_fits(self._instance, self._schema, existing_hdul)
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Card is too long")
             if self._no_asdf_extension:
@@ -750,7 +772,7 @@ class DataModel(properties.ObjectNode):
         return self._shape
 
     def __setattr__(self, attr, value):
-        if attr in frozenset(("shape", "history", "_extra_fits", "schema")):
+        if attr in frozenset(("shape", "history", "schema")):
             object.__setattr__(self, attr, value)
         else:
             properties.ObjectNode.__setattr__(self, attr, value)
@@ -933,7 +955,7 @@ class DataModel(properties.ObjectNode):
         for _, val in self.items():
             yield val
 
-    def update(self, d, only=None, extra_fits=False):
+    def update(self, d, only=None):
         """
         Update this model with the metadata elements from another model.
 
@@ -947,8 +969,6 @@ class DataModel(properties.ObjectNode):
         only : str, None
             Update only the named hdu, e.g. ``only='PRIMARY'``. Can either be
             a string or list of hdu names. Default is to update all the hdus.
-        extra_fits : bool
-            Update from ``extra_fits``.  Default is False.
         """
 
         def hdu_keywords_from_data(d, path, hdu_keywords):
@@ -1046,12 +1066,6 @@ class DataModel(properties.ObjectNode):
         # Perform the updates to the keywords mentioned in the schema
         for path in hdu_keywords:
             if not protected_keyword(path):
-                set_hdu_keyword(self._instance, d, path)
-
-        # Update from extra_fits as well, if indicated
-        if extra_fits:
-            for hdu_name in hdu_names:
-                path = ["extra_fits", hdu_name, "header"]
                 set_hdu_keyword(self._instance, d, path)
 
         self.validate()

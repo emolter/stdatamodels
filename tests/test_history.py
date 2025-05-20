@@ -93,4 +93,7 @@ def test_history_from_fits(tmp_path):
         m.save(tmpfits2)
 
     with DataModel(tmpfits2) as m:
+        # FAILS. currently this is first, second, second, third
+        # seems to have appended m.history to the existing history
+        # instead of replacing it
         assert m.history == [{"description": "Second entry"}, {"description": "Third entry"}]
