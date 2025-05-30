@@ -737,6 +737,9 @@ def _load_history(hdulist, tree):
 
     for entry in header["HISTORY"]:
         history["entries"].append(HistoryEntry({"description": entry}))
+    # history has now been added to the ASDF tree, so remove it from the header
+    # to avoid duplication on save
+    del header["HISTORY"]
 
 
 def from_fits(hdulist, schema, context, **kwargs):
