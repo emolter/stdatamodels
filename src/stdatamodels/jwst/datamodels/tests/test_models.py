@@ -160,53 +160,42 @@ def datamodel_for_update(tmp_path):
     return path
 
 
-@pytest.mark.parametrize("extra_fits", [True, False])
 @pytest.mark.parametrize("only", [None, "PRIMARY", "SCI"])
-def test_update_from_datamodel(tmp_path, datamodel_for_update, only, extra_fits):
-    """Test update method does not update from extra_fits unless asked"""
+def test_update_from_datamodel(tmp_path, datamodel_for_update, only):
+    """
+    Test update method only updates the appropriate hdulist extensions.
+    
+    TODO: what should the behavior be for update() if there is extra_fits-like info in the hdulist?
+    Should it get copied over to the new model, or should it be ignored (with warning)?
+    """
     path = tmp_path / "new.fits"
     with ImageModel((5, 5)) as newim:
         with ImageModel(datamodel_for_update) as oldim:
             # Verify the fixture returns keywords we expect
             assert oldim.meta.telescope == "JWST"
             assert oldim.meta.wcsinfo.crval1 == 5
-            assert oldim.extra_fits.PRIMARY.header == [["FOO", "BAR", ""]]
-            assert oldim.extra_fits.SCI.header == [["BAZ", "BUZ", ""]]
+            assert "FOO" in oldim.hdulist["PRIMARY"].header
+            assert "BAZ" in oldim.hdulist["SCI"].header
 
-            newim.update(oldim, only=only, extra_fits=extra_fits)
+            newim.update(oldim, only=only)
         newim.save(path)
 
     with fits.open(path) as hdulist:
-        if extra_fits:
-            if only == "PRIMARY":
-                assert "TELESCOP" in hdulist["PRIMARY"].header
-                assert "CRVAL1" not in hdulist["SCI"].header
-                assert "FOO" in hdulist["PRIMARY"].header
-                assert "BAZ" not in hdulist["SCI"].header
-            elif only == "SCI":
-                assert "TELESCOP" not in hdulist["PRIMARY"].header
-                assert "CRVAL1" in hdulist["SCI"].header
-                assert "FOO" not in hdulist["PRIMARY"].header
-                assert "BAZ" in hdulist["SCI"].header
-            else:
-                assert "TELESCOP" in hdulist["PRIMARY"].header
-                assert "CRVAL1" in hdulist["SCI"].header
-                assert "FOO" in hdulist["PRIMARY"].header
-                assert "BAZ" in hdulist["SCI"].header
-
-        else:
-            assert "FOO" not in hdulist["PRIMARY"].header
+        if only == "PRIMARY":
+            assert "TELESCOP" in hdulist["PRIMARY"].header
+            assert "CRVAL1" not in hdulist["SCI"].header
+            assert "FOO" in hdulist["PRIMARY"].header
             assert "BAZ" not in hdulist["SCI"].header
-
-            if only == "PRIMARY":
-                assert "TELESCOP" in hdulist["PRIMARY"].header
-                assert "CRVAL1" not in hdulist["SCI"].header
-            elif only == "SCI":
-                assert "TELESCOP" not in hdulist["PRIMARY"].header
-                assert "CRVAL1" in hdulist["SCI"].header
-            else:
-                assert "TELESCOP" in hdulist["PRIMARY"].header
-                assert "CRVAL1" in hdulist["SCI"].header
+        elif only == "SCI":
+            assert "TELESCOP" not in hdulist["PRIMARY"].header
+            assert "CRVAL1" in hdulist["SCI"].header
+            assert "FOO" not in hdulist["PRIMARY"].header
+            assert "BAZ" in hdulist["SCI"].header
+        else:
+            assert "TELESCOP" in hdulist["PRIMARY"].header
+            assert "CRVAL1" in hdulist["SCI"].header
+            assert "FOO" in hdulist["PRIMARY"].header
+            assert "BAZ" in hdulist["SCI"].header
 
 
 def test_update_from_dict(tmp_path):

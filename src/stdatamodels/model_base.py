@@ -333,17 +333,29 @@ class DataModel(properties.ObjectNode):
 
         some warning here about why you shouldn't try to directly access this
         """  # numpydoc ignore=RT01
-        warnings.warn("whatever", UserWarning, stacklevel=2)
+        # warnings.warn("whatever", UserWarning, stacklevel=2)
         return self._hdulist
 
     @hdulist.setter
     def hdulist(self, value):
-        """
-        Set the HDUList object for this model.
+        raise AttributeError("The hdulist attribute is read-only")
 
-        this should raise an error?
+    @property
+    def extra_fits(self):
         """
-        raise AttributeError("hdulist is read-only")
+        Get the extra_fits attribute.
+
+        Raises
+        ------
+        AttributeError
+            The extra_fits property no longer exists, and round-tripping FITS files
+            is handled via the `hdulist` attribute instead.
+        """
+        raise AttributeError(
+            "The extra_fits property no longer exists. For read-only access to FITS extensions "
+            "that are not defined in the schema, use the ``hdulist`` attribute "
+            "of the datamodel instead."
+        )
 
     @property
     def crds_observatory(self):
