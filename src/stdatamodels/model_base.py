@@ -1016,7 +1016,7 @@ class DataModel(properties.ObjectNode):
             # should not be copied frpm the other image
             if len(path) == 2:
                 if path[0] == "meta":
-                    if path[1] in ("date", "model_type"):
+                    if path[1] in ("date", "model_type", "filename"):
                         return True
             return False
 
