@@ -30,7 +30,7 @@ def open(init=None, guess=True, memmap=False, **kwargs):  # noqa: A001
 
     Parameters
     ----------
-    init : shape tuple, file path, astropy.io.fits.HDUList, numpy array, dict, None
+    init : shape tuple, file path, JWSTDataModel, astropy.io.fits.HDUList, numpy array, dict, None
 
         - None: A default data model with no shape
 
@@ -40,6 +40,8 @@ def open(init=None, guess=True, memmap=False, **kwargs):  # noqa: A001
 
         - astropy.io.fits.HDUList: Initialize from the given
           `~astropy.io.fits.HDUList`
+
+        - JWSTDataModel: Do nothing, just return the model.
 
         - A numpy array: A new model with the data array initialized
           to what was passed in.
@@ -82,8 +84,7 @@ def open(init=None, guess=True, memmap=False, **kwargs):  # noqa: A001
         return model_base.JwstDataModel(None, **kwargs)
 
     elif isinstance(init, model_base.JwstDataModel):
-        # Copy the object so it knows not to close here
-        return init.__class__(init, **kwargs)
+        return init
 
     elif isinstance(init, (str, Path)):
         # If given a string, presume its a file path.
