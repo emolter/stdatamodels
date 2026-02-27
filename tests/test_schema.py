@@ -219,3 +219,12 @@ def test_merge_property_tree_top():
     }
     f = merge_property_trees(s)
     assert f["id"] == "foo"
+
+
+def test_oneof_datatype():
+    with BasicModel() as m:
+        m.area = np.ones((10, 10), dtype=np.float64)
+        assert m.area.dtype == np.float64
+
+        m.data = np.ones((10, 10), dtype=np.uint16)
+        assert m.data.dtype == np.float32

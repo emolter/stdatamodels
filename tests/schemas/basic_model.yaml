@@ -23,6 +23,13 @@ allOf:
         default: 0
       area:
         ndim: 2
-        datatype: float32
-        default: 0.0
+        OneOf: [
+           {
+             datatype: float32,
+             default: 0.0
+           },
+           {
+             datatype: uint16,
+             default: 0
+           }]
 ...
