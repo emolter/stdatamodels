@@ -35,7 +35,15 @@ __all__ = [
 ]
 
 
-class _SimpleModel(ReferenceFileModel):
+class _NoFitsWrite:
+    """Mixin for reference files not writable to FITS."""
+
+    def to_fits(self):
+        """Override base class to specify that reference files are not writable to FITS."""
+        raise NotImplementedError("FITS format is not supported for this file.")
+
+
+class _SimpleModel(ReferenceFileModel, _NoFitsWrite):
     """A DataModel for a reference file that includes an astropy.modeling.Model."""
 
     schema_url = None
@@ -70,20 +78,6 @@ class _SimpleModel(ReferenceFileModel):
             except NotImplementedError:
                 pass
 
-    def on_save(self, path=None):
-        """
-        Modify the model.meta.reftype attribute before saving to disk.
-
-        Also implicitly turns off other DataModel on_save functionality, which is
-        not relevant for this type of model.
-
-        Parameters
-        ----------
-        path : str, optional
-            Not used, only here to match the signature of the parent class
-        """
-        self.meta.reftype = self.reftype
-
     def populate_meta(self):
         """
         Populate specific meta keywords.
@@ -91,10 +85,6 @@ class _SimpleModel(ReferenceFileModel):
         Should be overwritten by subclasses if needed.
         """
         raise NotImplementedError
-
-    def to_fits(self):
-        """Override base class to specify that reference files are not writable to FITS."""
-        raise NotImplementedError("FITS format is not supported for this file.")
 
     def validate(self):
         """Run additional validations beyond schema validation for these model types."""
@@ -138,7 +128,7 @@ class DistortionModel(_SimpleModel):
                 warnings.warn(traceback.format_exc(), ValidationWarning, stacklevel=2)
 
 
-class DistortionMRSModel(ReferenceFileModel):
+class DistortionMRSModel(ReferenceFileModel, _NoFitsWrite):
     """A model for a reference file of type "distortion" for the MIRI MRS."""
 
     schema_url = "http://stsci.edu/schemas/jwst_datamodel/distortion_mrs.schema"
@@ -209,17 +199,11 @@ class DistortionMRSModel(ReferenceFileModel):
             except NotImplementedError:
                 pass
 
-    def on_save(self, path=None):
-        self.meta.reftype = self.reftype
-
     def populate_meta(self):
         self.meta.instrument.name = "MIRI"
         self.meta.exposure.type = "MIR_MRS"
         self.meta.input_units = u.pix
         self.meta.output_units = u.arcsec
-
-    def to_fits(self):
-        raise NotImplementedError("FITS format is not supported for this file.")
 
     def validate(self):
         super().validate()
@@ -288,7 +272,7 @@ class SpecwcsModel(_SimpleModel):
                 warnings.warn(traceback.format_exc(), ValidationWarning, stacklevel=2)
 
 
-class NIRCAMGrismModel(ReferenceFileModel):
+class NIRCAMGrismModel(ReferenceFileModel, _NoFitsWrite):
     """
     A model for a reference file of type "specwcs" for NIRCAM WFSS.
 
@@ -374,11 +358,8 @@ class NIRCAMGrismModel(ReferenceFileModel):
             else:
                 warnings.warn(traceback.format_exc(), ValidationWarning, stacklevel=2)
 
-    def to_fits(self):
-        raise NotImplementedError("FITS format is not supported for this file.")
 
-
-class NIRISSGrismModel(ReferenceFileModel):
+class NIRISSGrismModel(ReferenceFileModel, _NoFitsWrite):
     """A model for a reference file of type "specwcs" for NIRISS grisms."""
 
     schema_url = "http://stsci.edu/schemas/jwst_datamodel/specwcs_niriss_grism.schema"
@@ -456,11 +437,8 @@ class NIRISSGrismModel(ReferenceFileModel):
             else:
                 warnings.warn(traceback.format_exc(), ValidationWarning, stacklevel=2)
 
-    def to_fits(self):
-        raise NotImplementedError("FITS format is not supported for this file.")
 
-
-class MiriWFSSSpecwcsModel(ReferenceFileModel):
+class MiriWFSSSpecwcsModel(ReferenceFileModel, _NoFitsWrite):
     """A model for a reference file of type "specwcs" for MIRI WFSS."""
 
     schema_url = "http://stsci.edu/schemas/jwst_datamodel/specwcs_miri_wfss.schema"
@@ -537,9 +515,6 @@ class MiriWFSSSpecwcsModel(ReferenceFileModel):
                 raise
             else:
                 warnings.warn(traceback.format_exc(), ValidationWarning, stacklevel=2)
-
-    def to_fits(self):
-        raise NotImplementedError("FITS format is not supported for this file.")
 
 
 class MiriLRSSpecwcsModel(ReferenceFileModel):
@@ -657,7 +632,7 @@ class MiriLRSSpecwcsModel(ReferenceFileModel):
                 warnings.warn(traceback.format_exc(), ValidationWarning, stacklevel=2)
 
 
-class RegionsModel(ReferenceFileModel):
+class RegionsModel(ReferenceFileModel, _NoFitsWrite):
     """A model for a reference file of type "regions"."""
 
     schema_url = "http://stsci.edu/schemas/jwst_datamodel/regions.schema"
@@ -682,15 +657,9 @@ class RegionsModel(ReferenceFileModel):
         if init is None:
             self.populate_meta()
 
-    def on_save(self, path=None):
-        self.meta.reftype = self.reftype
-
     def populate_meta(self):
         self.meta.instrument.name = "MIRI"
         self.meta.exposure.type = "MIR_MRS"
-
-    def to_fits(self):
-        raise NotImplementedError("FITS format is not supported for this file.")
 
     def validate(self):
         super().validate()
@@ -718,7 +687,7 @@ class RegionsModel(ReferenceFileModel):
                 warnings.warn(traceback.format_exc(), ValidationWarning, stacklevel=2)
 
 
-class WavelengthrangeModel(ReferenceFileModel):
+class WavelengthrangeModel(ReferenceFileModel, _NoFitsWrite):
     """
     A model for a reference file of type "wavelengthrange".
 
@@ -768,12 +737,6 @@ class WavelengthrangeModel(ReferenceFileModel):
         if wunits is not None:
             self.meta.wavelength_units = wunits
 
-    def on_save(self, path=None):
-        self.meta.reftype = self.reftype
-
-    def to_fits(self):
-        raise NotImplementedError("FITS format is not supported for this file")
-
     def validate(self):
         super().validate()
         try:
@@ -811,7 +774,7 @@ class WavelengthrangeModel(ReferenceFileModel):
         return wave_range
 
 
-class FPAModel(ReferenceFileModel):
+class FPAModel(ReferenceFileModel, _NoFitsWrite):
     """A model for a NIRSPEC reference file of type "fpa"."""
 
     schema_url = "http://stsci.edu/schemas/jwst_datamodel/fpa.schema"
@@ -840,9 +803,6 @@ class FPAModel(ReferenceFileModel):
         if init is None:
             self.populate_meta()
 
-    def on_save(self, path=None):
-        self.meta.reftype = self.reftype
-
     def populate_meta(self):
         self.meta.instrument.name = "NIRSPEC"
         self.meta.instrument.p_detector = "NRS1|NRS2|"
@@ -850,9 +810,6 @@ class FPAModel(ReferenceFileModel):
         NRS_CONFIRM|NRS_FIXEDSLIT|NRS_IFU|NRS_MSASPEC|NRS_IMAGE|NRS_FOCUS|\
         NRS_MIMF|NRS_MSATA|NRS_WATA|NRS_LAMP|NRS_BRIGHTOBJ|"
         self.meta.exposure.type = "N/A"
-
-    def to_fits(self):
-        raise NotImplementedError("FITS format is not supported for this file.")
 
     def validate(self):
         super().validate()
@@ -866,7 +823,7 @@ class FPAModel(ReferenceFileModel):
                 warnings.warn(traceback.format_exc(), ValidationWarning, stacklevel=2)
 
 
-class IFUPostModel(ReferenceFileModel):
+class IFUPostModel(ReferenceFileModel, _NoFitsWrite):
     """A model for a NIRSPEC reference file of type "ifupost"."""
 
     schema_url = "http://stsci.edu/schemas/jwst_datamodel/ifupost.schema"
@@ -905,23 +862,14 @@ class IFUPostModel(ReferenceFileModel):
         if init is None:
             self.populate_meta()
 
-    def on_save(self, path=None):
-        self.meta.reftype = self.reftype
-
     def populate_meta(self):
         self.meta.instrument.name = "NIRSPEC"
         self.meta.instrument.p_detector = "NRS1|NRS2|"
         self.meta.exposure.type = "NRS_IFU"
         self.meta.exposure.p_exptype = "NRS_IFU"
 
-    def to_fits(self):
-        raise NotImplementedError("FITS format is not supported for this file.")
 
-    def validate(self):
-        super().validate()
-
-
-class IFUSlicerModel(ReferenceFileModel):
+class IFUSlicerModel(ReferenceFileModel, _NoFitsWrite):
     """A model for a NIRSPEC reference file of type "ifuslicer"."""
 
     schema_url = "http://stsci.edu/schemas/jwst_datamodel/ifuslicer.schema"
@@ -951,23 +899,14 @@ class IFUSlicerModel(ReferenceFileModel):
         if init is None:
             self.populate_meta()
 
-    def on_save(self, path=None):
-        self.meta.reftype = self.reftype
-
     def populate_meta(self):
         self.meta.instrument.name = "NIRSPEC"
         self.meta.instrument.p_detector = "NRS1|NRS2|"
         self.meta.exposure.type = "NRS_IFU"
         self.meta.exposure.p_exptype = "NRS_IFU"
 
-    def to_fits(self):
-        raise NotImplementedError("FITS format is not supported for this file.")
 
-    def validate(self):
-        super().validate()
-
-
-class MSAModel(ReferenceFileModel):
+class MSAModel(ReferenceFileModel, _NoFitsWrite):
     """A model for a NIRSPEC reference file of type "msa"."""
 
     schema_url = "http://stsci.edu/schemas/jwst_datamodel/msa.schema"
@@ -999,9 +938,6 @@ class MSAModel(ReferenceFileModel):
         if init is None:
             self.populate_meta()
 
-    def on_save(self, path=None):
-        self.meta.reftype = self.reftype
-
     def populate_meta(self):
         self.meta.instrument.name = "NIRSPEC"
         self.meta.instrument.p_detector = "NRS1|NRS2|"
@@ -1010,14 +946,8 @@ class MSAModel(ReferenceFileModel):
         NRS_MIMF|NRS_MSATA|NRS_WATA|NRS_LAMP|NRS_BRIGHTOBJ|"
         self.meta.exposure.type = "N/A"
 
-    def to_fits(self):
-        raise NotImplementedError("FITS format is not supported for this file.")
 
-    def validate(self):
-        super().validate()
-
-
-class DisperserModel(ReferenceFileModel):
+class DisperserModel(ReferenceFileModel, _NoFitsWrite):
     """A model for a NIRSPEC reference file of type "disperser"."""
 
     schema_url = "http://stsci.edu/schemas/jwst_datamodel/disperser.schema"
@@ -1104,9 +1034,6 @@ class DisperserModel(ReferenceFileModel):
         if init is None:
             self.populate_meta()
 
-    def on_save(self, path=None):
-        self.meta.reftype = self.reftype
-
     def populate_meta(self):
         self.meta.instrument.name = "NIRSPEC"
         self.meta.instrument.p_detector = "NRS1|NRS2|"
@@ -1114,9 +1041,6 @@ class DisperserModel(ReferenceFileModel):
         NRS_CONFIRM|NRS_FIXEDSLIT|NRS_IFU|NRS_MSASPEC|NRS_IMAGE|NRS_FOCUS|\
         NRS_MIMF|NRS_MSATA|NRS_WATA|NRS_LAMP|NRS_BRIGHTOBJ|"
         self.meta.exposure.type = "N/A"
-
-    def to_fits(self):
-        raise NotImplementedError("FITS format is not supported for this file.")
 
     def validate(self):
         super().validate()
@@ -1284,9 +1208,6 @@ class FOREModel(_SimpleModel):
         NRS_MIMF|NRS_MSATA|NRS_WATA|NRS_LAMP|NRS_BRIGHTOBJ|"
         self.meta.exposure.type = "N/A"
 
-    def on_save(self, path=None):
-        self.meta.reftype = self.reftype
-
     def validate(self):
         super().validate()
         try:
@@ -1349,9 +1270,6 @@ class WaveCorrModel(ReferenceFileModel):
 
     def populate_meta(self):
         self.meta.instrument.name = "NIRSPEC"
-
-    def on_save(self, path=None):
-        self.meta.reftype = self.reftype
 
     def validate(self):
         super().validate()

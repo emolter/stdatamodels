@@ -69,6 +69,10 @@ class ReferenceFileModel(JwstDataModel):
             output_path = super().save(path, dir_path, *args, **kwargs)
         return output_path
 
+    def on_save(self, path=None):  # noqa: D102
+        super().on_save(path)
+        self.meta.reftype = self.reftype
+
     def print_err(self, message):
         """
         Raise error or warn, depending on strict_validation attribute.

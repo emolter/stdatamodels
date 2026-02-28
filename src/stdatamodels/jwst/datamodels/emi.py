@@ -28,7 +28,7 @@ class EmiModel(ReferenceFileModel):
         super(EmiModel, self).__init__(init=init, **kwargs)
 
     def on_save(self, path=None):  # noqa: D102
-        self.meta.reftype = self.reftype
+        super().on_save(path)
         self.meta.instrument.name = "MIRI"
 
     def validate(self):  # noqa: D102

@@ -34,9 +34,6 @@ class TsoPhotModel(ReferenceFileModel):
         if radii is not None:
             self.radii = radii
 
-    def on_save(self, path=None):  # noqa: D102
-        self.meta.reftype = self.reftype
-
     def to_fits(self):  # noqa: D102
         raise NotImplementedError("FITS format is not supported for this file.")
 

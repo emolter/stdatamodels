@@ -22,12 +22,3 @@ class SIRSKernelModel(ReferenceFileModel):
 
     schema_url = "http://stsci.edu/schemas/jwst_datamodel/sirs_kernel.schema"
     reftype = "sirskernel"
-
-    def __init__(self, init=None, **kwargs):
-        super(SIRSKernelModel, self).__init__(init=init, **kwargs)
-
-    def on_save(self, path=None):  # noqa: D102
-        self.meta.reftype = self.reftype
-
-    def validate(self):  # noqa: D102
-        super(SIRSKernelModel, self).validate()
