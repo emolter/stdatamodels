@@ -18,6 +18,8 @@ class ReferenceFileModel(JwstDataModel):
         super(ReferenceFileModel, self).__init__(init=init, **kwargs)
         self._no_asdf_extension = True
         self.meta.telescope = "JWST"
+        if getattr(self, "reftype", None) is not None:
+            self.meta.reftype = self.reftype
 
     def validate(self):
         """Check that required reference file keywords are set."""
@@ -68,10 +70,6 @@ class ReferenceFileModel(JwstDataModel):
         else:
             output_path = super().save(path, dir_path, *args, **kwargs)
         return output_path
-
-    def on_save(self, path=None):  # noqa: D102
-        super().on_save(path)
-        self.meta.reftype = self.reftype
 
     def print_err(self, message):
         """

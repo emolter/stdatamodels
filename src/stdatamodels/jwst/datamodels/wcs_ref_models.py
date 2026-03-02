@@ -43,11 +43,46 @@ class _NoFitsWrite:
         raise NotImplementedError("FITS format is not supported for this file.")
 
 
-class _SimpleModel(ReferenceFileModel, _NoFitsWrite):
-    """A DataModel for a reference file that includes an astropy.modeling.Model."""
+class _WcsRefModel(ReferenceFileModel):
+    """Base class for WCS reference file models."""
 
     schema_url = None
     reftype = None
+
+    def __init__(self, init, *args, **kwargs):
+        super().__init__(init, *args, **kwargs)
+        if init is None:
+            self.populate_meta()
+
+    def populate_meta(self):
+        """
+        Populate specific meta keywords.
+
+        Should be overwritten by subclasses.
+        """
+        pass
+
+    def validate(self):
+        super().validate()
+        try:
+            assert self.meta.instrument.name in [
+                "NIRCAM",
+                "NIRSPEC",
+                "MIRI",
+                "TFI",
+                "FGS",
+                "NIRISS",
+            ]
+            assert self.meta.reftype == self.reftype
+        except AssertionError:
+            if self._strict_validation:
+                raise
+            else:
+                warnings.warn(traceback.format_exc(), ValidationWarning, stacklevel=2)
+
+
+class _SimpleModel(_WcsRefModel, _NoFitsWrite):
+    """A DataModel for a reference file containing just one astropy.modeling.Model."""
 
     def __init__(self, init=None, model=None, input_units=None, output_units=None, **kwargs):
         """
@@ -72,33 +107,12 @@ class _SimpleModel(ReferenceFileModel, _NoFitsWrite):
             self.meta.input_units = input_units
         if output_units is not None:
             self.meta.output_units = output_units
-        if init is None:
-            try:
-                self.populate_meta()
-            except NotImplementedError:
-                pass
-
-    def populate_meta(self):
-        """
-        Populate specific meta keywords.
-
-        Should be overwritten by subclasses if needed.
-        """
-        raise NotImplementedError
 
     def validate(self):
         """Run additional validations beyond schema validation for these model types."""
         super().validate()
         try:
             assert isinstance(self.model, Model) or all(isinstance(m, Model) for m in self.model)
-            assert self.meta.instrument.name in [
-                "NIRCAM",
-                "NIRSPEC",
-                "MIRI",
-                "TFI",
-                "FGS",
-                "NIRISS",
-            ]
         except AssertionError:
             if self._strict_validation:
                 raise
@@ -128,7 +142,7 @@ class DistortionModel(_SimpleModel):
                 warnings.warn(traceback.format_exc(), ValidationWarning, stacklevel=2)
 
 
-class DistortionMRSModel(ReferenceFileModel, _NoFitsWrite):
+class DistortionMRSModel(_WcsRefModel, _NoFitsWrite):
     """A model for a reference file of type "distortion" for the MIRI MRS."""
 
     schema_url = "http://stsci.edu/schemas/jwst_datamodel/distortion_mrs.schema"
@@ -193,11 +207,6 @@ class DistortionMRSModel(ReferenceFileModel, _NoFitsWrite):
             self.meta.input_units = input_units
         if output_units is not None:
             self.meta.output_units = output_units
-        if init is None:
-            try:
-                self.populate_meta()
-            except NotImplementedError:
-                pass
 
     def populate_meta(self):
         self.meta.instrument.name = "MIRI"
@@ -257,14 +266,6 @@ class SpecwcsModel(_SimpleModel):
         try:
             assert isinstance(self.meta.input_units, (str, u.NamedUnit))
             assert isinstance(self.meta.output_units, (str, u.NamedUnit))
-            assert self.meta.instrument.name in [
-                "NIRCAM",
-                "NIRSPEC",
-                "MIRI",
-                "TFI",
-                "FGS",
-                "NIRISS",
-            ]
         except AssertionError:
             if self._strict_validation:
                 raise
@@ -272,7 +273,7 @@ class SpecwcsModel(_SimpleModel):
                 warnings.warn(traceback.format_exc(), ValidationWarning, stacklevel=2)
 
 
-class NIRCAMGrismModel(ReferenceFileModel, _NoFitsWrite):
+class NIRCAMGrismModel(_WcsRefModel, _NoFitsWrite):
     """
     A model for a reference file of type "specwcs" for NIRCAM WFSS.
 
@@ -322,8 +323,6 @@ class NIRCAMGrismModel(ReferenceFileModel, _NoFitsWrite):
         """
         super().__init__(init=init, **kwargs)
 
-        if init is None:
-            self.populate_meta()
         if displ is not None:
             self.displ = displ
         if dispx is not None:
@@ -342,7 +341,6 @@ class NIRCAMGrismModel(ReferenceFileModel, _NoFitsWrite):
     def populate_meta(self):
         self.meta.instrument.name = "NIRCAM"
         self.meta.exposure.type = "NRC_WFSS"
-        self.meta.reftype = self.reftype
 
     def validate(self):
         super().validate()
@@ -351,7 +349,6 @@ class NIRCAMGrismModel(ReferenceFileModel, _NoFitsWrite):
             assert isinstance(self.meta.output_units, (str, u.NamedUnit))
             assert self.meta.instrument.name == "NIRCAM"
             assert self.meta.exposure.type == "NRC_WFSS"
-            assert self.meta.reftype == self.reftype
         except AssertionError:
             if self._strict_validation:
                 raise
@@ -359,7 +356,7 @@ class NIRCAMGrismModel(ReferenceFileModel, _NoFitsWrite):
                 warnings.warn(traceback.format_exc(), ValidationWarning, stacklevel=2)
 
 
-class NIRISSGrismModel(ReferenceFileModel, _NoFitsWrite):
+class NIRISSGrismModel(_WcsRefModel, _NoFitsWrite):
     """A model for a reference file of type "specwcs" for NIRISS grisms."""
 
     schema_url = "http://stsci.edu/schemas/jwst_datamodel/specwcs_niriss_grism.schema"
@@ -401,8 +398,6 @@ class NIRISSGrismModel(ReferenceFileModel, _NoFitsWrite):
         """
         super().__init__(init=init, **kwargs)
 
-        if init is None:
-            self.populate_meta()
         if displ is not None:
             self.displ = displ
         if dispx is not None:
@@ -420,7 +415,6 @@ class NIRISSGrismModel(ReferenceFileModel, _NoFitsWrite):
         self.meta.instrument.name = "NIRISS"
         self.meta.instrument.detector = "NIS"
         self.meta.exposure.type = "NIS_WFSS"
-        self.meta.reftype = self.reftype
 
     def validate(self):
         super(NIRISSGrismModel, self).validate()
@@ -430,7 +424,6 @@ class NIRISSGrismModel(ReferenceFileModel, _NoFitsWrite):
             assert self.meta.instrument.name == "NIRISS"
             assert self.meta.exposure.type == "NIS_WFSS"
             assert self.meta.instrument.detector == "NIS"
-            assert self.meta.reftype == self.reftype
         except AssertionError:
             if self._strict_validation:
                 raise
@@ -438,7 +431,7 @@ class NIRISSGrismModel(ReferenceFileModel, _NoFitsWrite):
                 warnings.warn(traceback.format_exc(), ValidationWarning, stacklevel=2)
 
 
-class MiriWFSSSpecwcsModel(ReferenceFileModel, _NoFitsWrite):
+class MiriWFSSSpecwcsModel(_WcsRefModel, _NoFitsWrite):
     """A model for a reference file of type "specwcs" for MIRI WFSS."""
 
     schema_url = "http://stsci.edu/schemas/jwst_datamodel/specwcs_miri_wfss.schema"
@@ -477,8 +470,6 @@ class MiriWFSSSpecwcsModel(ReferenceFileModel, _NoFitsWrite):
         """
         super().__init__(init=init, **kwargs)
 
-        if init is None:
-            self.populate_meta()
         if displ is not None:
             self.displ = displ
         if dispx is not None:
@@ -494,7 +485,6 @@ class MiriWFSSSpecwcsModel(ReferenceFileModel, _NoFitsWrite):
         self.meta.instrument.name = "MIRI"
         self.meta.instrument.detector = "MIRIMAGE"
         self.meta.exposure.type = "MIR_WFSS"
-        self.meta.reftype = self.reftype
 
     def validate(self):
         super(MiriWFSSSpecwcsModel, self).validate()
@@ -503,7 +493,6 @@ class MiriWFSSSpecwcsModel(ReferenceFileModel, _NoFitsWrite):
             assert isinstance(self.meta.output_units, (str, u.NamedUnit))
             assert self.meta.instrument.name == "MIRI"
             assert self.meta.exposure.type == "MIR_WFSS"
-            assert self.meta.reftype == self.reftype
             assert len(self.orders) == 1
             n_orders = len(self.orders)
             assert n_orders == 1
@@ -517,7 +506,7 @@ class MiriWFSSSpecwcsModel(ReferenceFileModel, _NoFitsWrite):
                 warnings.warn(traceback.format_exc(), ValidationWarning, stacklevel=2)
 
 
-class MiriLRSSpecwcsModel(ReferenceFileModel):
+class MiriLRSSpecwcsModel(_WcsRefModel):
     """
     A model for a reference file of type "specwcs" for MIRI LRS Slit.
 
@@ -584,8 +573,6 @@ class MiriLRSSpecwcsModel(ReferenceFileModel):
         """
         super().__init__(init=init, **kwargs)
 
-        if init is None:
-            self.populate_meta()
         if wavetable is not None:
             self.wavetable = wavetable
         if x_ref is not None:
@@ -616,7 +603,6 @@ class MiriLRSSpecwcsModel(ReferenceFileModel):
     def populate_meta(self):
         self.meta.instrument.name = "MIRI"
         self.meta.instrument.detector = "MIRIMAGE"
-        self.meta.reftype = self.reftype
         self.meta.instrument.filter = "P750L"
 
     def validate(self):
@@ -624,7 +610,6 @@ class MiriLRSSpecwcsModel(ReferenceFileModel):
         try:
             assert self.meta.instrument.name == "MIRI"
             assert self.meta.instrument.detector == "MIRIMAGE"
-            assert self.meta.reftype.lower() == self.reftype
         except AssertionError:
             if self._strict_validation:
                 raise
@@ -632,7 +617,7 @@ class MiriLRSSpecwcsModel(ReferenceFileModel):
                 warnings.warn(traceback.format_exc(), ValidationWarning, stacklevel=2)
 
 
-class RegionsModel(ReferenceFileModel, _NoFitsWrite):
+class RegionsModel(_WcsRefModel, _NoFitsWrite):
     """A model for a reference file of type "regions"."""
 
     schema_url = "http://stsci.edu/schemas/jwst_datamodel/regions.schema"
@@ -654,8 +639,6 @@ class RegionsModel(ReferenceFileModel, _NoFitsWrite):
         super().__init__(init=init, **kwargs)
         if regions is not None:
             self.regions = regions
-        if init is None:
-            self.populate_meta()
 
     def populate_meta(self):
         self.meta.instrument.name = "MIRI"
@@ -687,7 +670,7 @@ class RegionsModel(ReferenceFileModel, _NoFitsWrite):
                 warnings.warn(traceback.format_exc(), ValidationWarning, stacklevel=2)
 
 
-class WavelengthrangeModel(ReferenceFileModel, _NoFitsWrite):
+class WavelengthrangeModel(_WcsRefModel, _NoFitsWrite):
     """
     A model for a reference file of type "wavelengthrange".
 
@@ -737,16 +720,6 @@ class WavelengthrangeModel(ReferenceFileModel, _NoFitsWrite):
         if wunits is not None:
             self.meta.wavelength_units = wunits
 
-    def validate(self):
-        super().validate()
-        try:
-            assert self.meta.instrument.name in ("MIRI", "NIRSPEC", "NIRCAM", "NIRISS")
-        except AssertionError:
-            if self._strict_validation:
-                raise
-            else:
-                warnings.warn(traceback.format_exc(), ValidationWarning, stacklevel=2)
-
     def get_wfss_wavelength_range(self, filter_name, orders):
         """
         Retrieve the wavelength range for a WFSS observation.
@@ -774,7 +747,7 @@ class WavelengthrangeModel(ReferenceFileModel, _NoFitsWrite):
         return wave_range
 
 
-class FPAModel(ReferenceFileModel, _NoFitsWrite):
+class FPAModel(_WcsRefModel, _NoFitsWrite):
     """A model for a NIRSPEC reference file of type "fpa"."""
 
     schema_url = "http://stsci.edu/schemas/jwst_datamodel/fpa.schema"
@@ -800,8 +773,6 @@ class FPAModel(ReferenceFileModel, _NoFitsWrite):
             self.nrs1_model = nrs1_model
         if nrs2_model is not None:
             self.nrs2_model = nrs2_model
-        if init is None:
-            self.populate_meta()
 
     def populate_meta(self):
         self.meta.instrument.name = "NIRSPEC"
@@ -823,7 +794,7 @@ class FPAModel(ReferenceFileModel, _NoFitsWrite):
                 warnings.warn(traceback.format_exc(), ValidationWarning, stacklevel=2)
 
 
-class IFUPostModel(ReferenceFileModel, _NoFitsWrite):
+class IFUPostModel(_WcsRefModel, _NoFitsWrite):
     """A model for a NIRSPEC reference file of type "ifupost"."""
 
     schema_url = "http://stsci.edu/schemas/jwst_datamodel/ifupost.schema"
@@ -859,8 +830,6 @@ class IFUPostModel(ReferenceFileModel, _NoFitsWrite):
             else:
                 for key, val in slice_models.items():
                     setattr(self, key, val)
-        if init is None:
-            self.populate_meta()
 
     def populate_meta(self):
         self.meta.instrument.name = "NIRSPEC"
@@ -869,7 +838,7 @@ class IFUPostModel(ReferenceFileModel, _NoFitsWrite):
         self.meta.exposure.p_exptype = "NRS_IFU"
 
 
-class IFUSlicerModel(ReferenceFileModel, _NoFitsWrite):
+class IFUSlicerModel(_WcsRefModel, _NoFitsWrite):
     """A model for a NIRSPEC reference file of type "ifuslicer"."""
 
     schema_url = "http://stsci.edu/schemas/jwst_datamodel/ifuslicer.schema"
@@ -896,8 +865,6 @@ class IFUSlicerModel(ReferenceFileModel, _NoFitsWrite):
             self.model = model
         if data is not None:
             self.data = data
-        if init is None:
-            self.populate_meta()
 
     def populate_meta(self):
         self.meta.instrument.name = "NIRSPEC"
@@ -906,7 +873,7 @@ class IFUSlicerModel(ReferenceFileModel, _NoFitsWrite):
         self.meta.exposure.p_exptype = "NRS_IFU"
 
 
-class MSAModel(ReferenceFileModel, _NoFitsWrite):
+class MSAModel(_WcsRefModel, _NoFitsWrite):
     """A model for a NIRSPEC reference file of type "msa"."""
 
     schema_url = "http://stsci.edu/schemas/jwst_datamodel/msa.schema"
@@ -935,8 +902,6 @@ class MSAModel(ReferenceFileModel, _NoFitsWrite):
             self.Q3 = {"model": models["Q3"], "data": data["Q3"]}
             self.Q4 = {"model": models["Q4"], "data": data["Q4"]}
             self.Q5 = {"model": models["Q5"], "data": data["Q5"]}
-        if init is None:
-            self.populate_meta()
 
     def populate_meta(self):
         self.meta.instrument.name = "NIRSPEC"
@@ -947,7 +912,7 @@ class MSAModel(ReferenceFileModel, _NoFitsWrite):
         self.meta.exposure.type = "N/A"
 
 
-class DisperserModel(ReferenceFileModel, _NoFitsWrite):
+class DisperserModel(_WcsRefModel, _NoFitsWrite):
     """A model for a NIRSPEC reference file of type "disperser"."""
 
     schema_url = "http://stsci.edu/schemas/jwst_datamodel/disperser.schema"
@@ -1031,8 +996,6 @@ class DisperserModel(ReferenceFileModel, _NoFitsWrite):
             self.gwa_tiltx = gwa_tiltx
         if gwa_tilty is not None:
             self.gwa_tilty = gwa_tilty
-        if init is None:
-            self.populate_meta()
 
     def populate_meta(self):
         self.meta.instrument.name = "NIRSPEC"
@@ -1062,7 +1025,7 @@ class DisperserModel(ReferenceFileModel, _NoFitsWrite):
                 warnings.warn(traceback.format_exc(), ValidationWarning, stacklevel=2)
 
 
-class FilteroffsetModel(ReferenceFileModel):
+class FilteroffsetModel(_WcsRefModel):
     """A model for filter-dependent boresight offsets."""
 
     schema_url = "http://stsci.edu/schemas/jwst_datamodel/filteroffset.schema"
@@ -1091,7 +1054,6 @@ class FilteroffsetModel(ReferenceFileModel):
             self.meta.instrument.name = instrument
 
     def populate_meta(self):
-        self.meta.reftype = self.reftype
         if self.meta.instrument.name == "MIRI":
             self.meta.instrument.detector = "MIRIMAGE"
             self.meta.instrument.pfilter = "F1130W|F1140C|F2300C|F2100W|F1800W|\
@@ -1102,8 +1064,6 @@ class FilteroffsetModel(ReferenceFileModel):
         elif self.meta.instrument.name == "NIRISS":
             self.meta.instrument.pfilter = "F070W|F115W|F140M|F150W|F158M|\
             F200W|F277W|F356W|F380M|F430M|F444W|F480M|"
-        else:
-            raise ValueError(f"Unsupported instrument: {self.meta.instrument.name}")
 
     def validate(self):
         super().validate()
@@ -1227,7 +1187,7 @@ class FOREModel(_SimpleModel):
                 warnings.warn(traceback.format_exc(), ValidationWarning, stacklevel=2)
 
 
-class WaveCorrModel(ReferenceFileModel):
+class WaveCorrModel(_WcsRefModel):
     """Wavelength zero-point correction for the position of a point source in a NIRSpec slit."""
 
     reftype = "wavecorr"
@@ -1253,8 +1213,6 @@ class WaveCorrModel(ReferenceFileModel):
         super().__init__(init, **kwargs)
         if apertures is not None:
             self.apertures = apertures
-        if init is None:
-            self.populate_meta()
 
     @property
     def aperture_names(self):
