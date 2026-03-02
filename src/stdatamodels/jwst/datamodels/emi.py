@@ -24,12 +24,6 @@ class EmiModel(ReferenceFileModel):
     schema_url = "http://stsci.edu/schemas/jwst_datamodel/emi.schema"
     reftype = "emicorr"
 
-    def __init__(self, init=None, **kwargs):
-        super(EmiModel, self).__init__(init=init, **kwargs)
-
     def on_save(self, path=None):  # noqa: D102
         super().on_save(path)
         self.meta.instrument.name = "MIRI"
-
-    def validate(self):  # noqa: D102
-        super(EmiModel, self).validate()

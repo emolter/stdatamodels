@@ -22,9 +22,6 @@ class SossBkgModel(ReferenceFileModel):
 
     schema_url = "http://stsci.edu/schemas/jwst_datamodel/sossbkg.schema"
 
-    def __init__(self, init=None, **kwargs):
-        super(SossBkgModel, self).__init__(init=init, **kwargs)
-
 
 class WfssBkgModel(ReferenceFileModel):
     """
