@@ -7,6 +7,7 @@ from asdf import schema as asdf_schema
 from asdf import yamlutil
 from asdf.exceptions import ValidationError
 from asdf.schema import YAML_VALIDATORS
+from asdf.tagged import TaggedDict
 from asdf.tags.core import ndarray
 from asdf.util import HashableDict
 
@@ -205,6 +206,17 @@ def _check_value(value, schema, ctx):
             validators = YAML_VALIDATORS
 
         asdf_schema.validate(value, ctx=ctx._asdf, schema=schema, validators=validators)
+        if ctx._validate_arrays and isinstance(value, TaggedDict):
+            # check against model.shape attribute
+            expected_shape = getattr(ctx, "shape", None)
+            value_shape = value["shape"] if "shape" in value else None
+            if expected_shape is None or value_shape is None:
+                return
+            if tuple(value_shape[-2:]) != tuple(expected_shape[-2:]):
+                raise ValidationError(
+                    f"Expected array with shape (*, {expected_shape[-2]}, {expected_shape[-1]}), "
+                    f"got {value_shape}"
+                )
 
 
 def _error_message(path, error):
