@@ -58,7 +58,7 @@ class DataModel(properties.ObjectNode):
         pass_invalid_values=None,
         strict_validation=None,
         validate_on_assignment=None,
-        validate_arrays=False,
+        validate_arrays=True,
         ignore_missing_extensions=True,
         ignore_unrecognized_tag=False,
         **kwargs,
