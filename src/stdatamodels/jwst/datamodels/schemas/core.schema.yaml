@@ -2946,6 +2946,4 @@ properties:
             blend_table: True
       wcs:
         title: WCS object
-        anyOf:
-          - tag: tag:stsci.edu:gwcs/wcs-*
-          - type: "null"
+        tag: tag:stsci.edu:gwcs/wcs-*
