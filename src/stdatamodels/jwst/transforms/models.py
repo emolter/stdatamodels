@@ -11,8 +11,8 @@ registered with ASDF through entry points.
 import math
 import warnings
 from collections import namedtuple
-from functools import partial
 
+import numba as nb
 import numpy as np
 from astropy.modeling.core import Model
 from astropy.modeling.fitting import SplineSmoothingFitter
@@ -1195,16 +1195,18 @@ class _NIRCAMForwardGrismDispersion(_ForwardGrismDispersionBase):
 
         # handle multiple inverse model types
         if isinstance(model, (ListNode, list, tuple)):
-            if len(model[0].inputs) == 2:
+            if model[0].shape == (4, 4):
                 xr = _poly_with_spatial_dependence(t0, x0, y0, model)
-            elif len(model[0].inputs) == 1:
-                xr = (dx - model[0].c0.value) / model[0].c1.value
+            elif model[0].shape == (2,):
+                xr = (dx - model[0][0]) / model[0][1]
                 return xr
             else:
                 raise ValueError(f"Unexpected model coefficients: {model}")
         else:
             xr = (dx - model.c0.value) / model.c1.value
             return xr
+
+        xr = _poly_with_spatial_dependence(t0, x0, y0, model)
 
         if len(xr.shape) > 1:
             xr = xr[0, :]
@@ -1471,7 +1473,7 @@ class NIRCAMBackwardGrismDispersion(_BackwardGrismDispersionBase):
 
         Parameters
         ----------
-        model : tuple[:class:`astropy.modeling.polynomial.Polynomial2D`]
+        model : list[np.ndarray]
             The models encoding the x, y dependence of the trace model's
             polynomial coefficients.
         x0, y0 : float or np.ndarray
@@ -1507,24 +1509,50 @@ class NIRCAMBackwardGrismDispersion(_BackwardGrismDispersionBase):
             y0 = y0[0].flatten()
             wavelength = wavelength[:, 0].flatten()
 
-        trace_function = partial(_poly_with_spatial_dependence, model=model)
-
-        # Create a grid of t0, x0, and y0 values
-        tt, yy = np.meshgrid(t0, y0, indexing="ij")
-        xx = np.meshgrid(t0, x0, indexing="ij")[1]
-        wave_grid = trace_function(tt, xx, yy)
-        t_out = np.empty((len(wavelength), len(x0)))
-        for i, w in enumerate(wavelength):
-            # do a first order interpolation to find the t0 where residuals are minimized
-            # at each x,y location
-            resid = (wave_grid - w) ** 2
-            t_out[i, :] = _find_min_with_linear_interpolation(resid, t0)
+        t_out = _invdisp_interp(t0, x0, y0, wavelength, model)
 
         if t_out.shape[0] == 1:
             t_out = t_out[0, :]
         return t_out
 
 
+@nb.njit(fastmath=True)
+def _invdisp_interp(t0, x0, y0, wavelength, coeffs):
+    def trace_function(t0, x0, y0):
+        return _poly_with_spatial_dependence(t0, x0, y0, model=coeffs)
+
+    # Create a grid of t0, x0, and y0 values
+    tt, yy = custom_meshgrid_ij(t0, y0)
+    xx = custom_meshgrid_ij(t0, x0)[1]
+    wave_grid = trace_function(tt, xx, yy)
+    t_out = np.empty((len(wavelength), len(x0)))
+    for i, w in enumerate(wavelength):
+        # do a first order interpolation to find the t0 where residuals are minimized
+        # at each x,y location
+        resid = (wave_grid - w) ** 2
+        t_out[i, :] = _find_min_with_linear_interpolation(resid, t0)
+    return t_out
+
+
+@nb.njit(fastmath=True)
+def custom_meshgrid_ij(x, y):
+    nx = x.size
+    ny = y.size
+
+    # Initialize output shapes matching 'ij' matrix dimensions
+    xx = np.empty((nx, ny), dtype=x.dtype)
+    yy = np.empty((nx, ny), dtype=y.dtype)
+
+    # Fill values matching matrix indexing rules
+    for i in range(nx):
+        for j in range(ny):
+            xx[i, j] = x[i]
+            yy[i, j] = y[j]
+
+    return xx, yy
+
+
+@nb.njit(fastmath=True)
 def _find_min_with_linear_interpolation(resid, t0):
     """
     Vectorize linear interpolation over the 0th axis to find the minimum value.
@@ -1541,7 +1569,8 @@ def _find_min_with_linear_interpolation(resid, t0):
     this_t : ndarray
         The t-values that minimize the residuals at each pixel, shape (n_points,)
     """
-    min_ind = np.argmin(resid, axis=0, keepdims=True)[0]
+    min_ind = np.expand_dims(np.argmin(resid, axis=0), 0)[0]
+    # min_ind = np.argmin(resid, axis=0, keepdims=True)[0]
 
     # When the residuals are minimized near t=0 or t=1, just use those values
     # instead of doing a linear interpolation
@@ -1554,7 +1583,8 @@ def _find_min_with_linear_interpolation(resid, t0):
     good = (min_ind > 0) & (min_ind < resid.shape[0] - 1)
     good_ind = np.expand_dims(min_ind[good], axis=0)
     resid_good = resid[:, good]
-    grad_good = np.gradient(resid_good, axis=0)
+    # grad_good = np.gradient(resid_good, axis=0)
+    grad_good = numba_gradient_2d(resid_good, 0)
     grad_left = np.take_along_axis(grad_good, good_ind - 1, axis=0)[0]
     grad_right = np.take_along_axis(grad_good, good_ind + 1, axis=0)[0]
     grad_center = np.take_along_axis(grad_good, good_ind, axis=0)[0]
@@ -1582,6 +1612,30 @@ def _find_min_with_linear_interpolation(resid, t0):
 
     this_t[good] = x_intercept
     return this_t
+
+
+@nb.njit(fastmath=True)
+def numba_gradient_2d(f, axis):
+    rows, cols = f.shape
+    out = np.empty_like(f)
+
+    if axis == 0:
+        # Gradient along rows (loop rows outer, cols inner for memory layout)
+        for j in nb.prange(cols):
+            out[0, j] = f[1, j] - f[0, j]
+            out[rows - 1, j] = f[rows - 1, j] - f[rows - 2, j]
+            for i in range(1, rows - 1):
+                out[i, j] = (f[i + 1, j] - f[i - 1, j]) / 2.0
+
+    elif axis == 1:
+        # Gradient along columns
+        for i in nb.prange(rows):
+            out[i, 0] = f[i, 1] - f[i, 0]
+            out[i, cols - 1] = f[i, cols - 1] - f[i, cols - 2]
+            for j in range(1, cols - 1):
+                out[i, j] = (f[i, j + 1] - f[i, j - 1]) / 2.0
+
+    return out
 
 
 class NIRISSBackwardGrismDispersion(_BackwardGrismDispersionBase):
@@ -1890,6 +1944,7 @@ class NIRISSForwardColumnGrismDispersion(_WFSSForwardGrismDispersion):
         )
 
 
+@nb.njit(fastmath=True)
 def _poly_with_spatial_dependence(t, x0, y0, model):
     """
     Evaluate a polynomial of any order with model coefficients that depend on x0, y0.
@@ -1908,7 +1963,44 @@ def _poly_with_spatial_dependence(t, x0, y0, model):
     float or np.ndarray
         The evaluated polynomial at the given x0, y0, and t.
     """
-    return sum(c(x0, y0) * t**i for i, c in enumerate(model))
+    in_shape = t.shape
+    t = t.flatten()
+    x0 = x0.flatten()
+    y0 = y0.flatten()
+    out = np.empty_like(y0)
+    for i, coeffs in enumerate(model):
+        out += _numba_polyval2d_fast(x0, y0, coeffs) * t**i
+    return out.reshape(in_shape)
+
+
+@nb.njit(fastmath=True)
+def _numba_polyval2d_fast(x0, y0, c):
+    n = x0.shape[0]
+    out = np.zeros_like(x0)
+
+    for r in nb.prange(n):
+        x = x0[r]
+        y = y0[r]
+
+        # Unrolled Horner's method for a 3rd-order 2D polynomial
+        # Row 3 (x^3)
+        y_str3 = ((c[3, 3] * y + c[3, 2]) * y + c[3, 1]) * y + c[3, 0]
+        # Row 2 (x^2)
+        y_str2 = ((c[2, 3] * y + c[2, 2]) * y + c[2, 1]) * y + c[2, 0]
+        # Row 1 (x^1)
+        y_str1 = ((c[1, 3] * y + c[1, 2]) * y + c[1, 1]) * y + c[1, 0]
+        # Row 0 (x^0)
+        y_str0 = ((c[0, 3] * y + c[0, 2]) * y + c[0, 1]) * y + c[0, 0]
+
+        # Combine along the X axis
+        out[r] = ((y_str3 * x + y_str2) * x + y_str1) * x + y_str0
+
+    return out
+
+
+@nb.njit(fastmath=True)
+def _numba_polyval1d(t, c):
+    return np.polynomial.polynomial.polyval(t, c)
 
 
 def _evaluate_transform_guess_form(model, x=None, y=None, t=None):
@@ -1940,38 +2032,10 @@ def _evaluate_transform_guess_form(model, x=None, y=None, t=None):
         The evaluated transform at the given x, y, and t coordinates.
         For typical use, this corresponds to wavelength values.
     """
-    if isinstance(model, (ListNode, list, tuple)) and len(model) == 1:
-        model = model[0]
-
-    if isinstance(model, Model):
-        # model that depends only on t
-        # e.g. NIRCam dispx, NIRISS displ, invdispl
-        ninputs = len(model.inputs)
-        if ninputs != 1:
-            raise ValueError(
-                f"Received a transform with an unexpected number of inputs ({ninputs}); "
-                "expected 1 input for models depending only on t, or 2 inputs per coefficient "
-                "for models depending on x, y, and t."
-            )
-        return model(t)
-
-    if isinstance(model, (ListNode, list, tuple)):
-        # model with coefficients that depend on x, y
-        # e.g. NIRCam dispy, displ, NIRISS dispx, dispy
-        if any(not isinstance(m, Model) for m in model):
-            raise TypeError(
-                "Expected a model or list of models, but got a list containing non-model elements."
-            )
-
-        ninputs = len(model[0].inputs)
-        if ninputs == 2:
-            return _poly_with_spatial_dependence(t, x, y, model)
-
-        raise ValueError(
-            f"Received a transform with an unexpected number of inputs ({ninputs}); "
-            "expected 1 input for models depending only on t, or 2 inputs per coefficient "
-            "for models depending on x, y, and t."
-        )
+    if len(model[0].shape) >= 2:
+        return _poly_with_spatial_dependence(t, x, y, model)
+    elif len(model[0].shape) == 1:
+        return _numba_polyval1d(t, model[0])
     raise TypeError(f"Expected a model or list of models, but got {type(model)}. ")
 
 
