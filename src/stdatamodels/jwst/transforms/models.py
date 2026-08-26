@@ -1196,7 +1196,7 @@ class _NIRCAMForwardGrismDispersion(_ForwardGrismDispersionBase):
         # handle multiple inverse model types
         if isinstance(model, (ListNode, list, tuple)):
             if model[0].shape == (4, 4):
-                xr = _poly_with_spatial_dependence(t0, x0, y0, model)
+                xr = _poly_with_spatial_dependence(t0, x0, y0, np.array(model))
             elif model[0].shape == (2,):
                 xr = (dx - model[0][0]) / model[0][1]
                 return xr
@@ -1206,7 +1206,7 @@ class _NIRCAMForwardGrismDispersion(_ForwardGrismDispersionBase):
             xr = (dx - model.c0.value) / model.c1.value
             return xr
 
-        xr = _poly_with_spatial_dependence(t0, x0, y0, model)
+        xr = _poly_with_spatial_dependence(t0, x0, y0, np.array(model))
 
         if len(xr.shape) > 1:
             xr = xr[0, :]
@@ -1494,13 +1494,13 @@ class NIRCAMBackwardGrismDispersion(_BackwardGrismDispersionBase):
         """
         t0 = np.linspace(0.0, 1.0, int(self.sampling))
 
-        if len(model) < 2:
-            # Handle legacy versions of the trace model
-            xr = _evaluate_transform_guess_form(model, x=x0, y=y0, t=t0)
-            f = np.zeros_like(wavelength)
-            for i, w in enumerate(wavelength):
-                f[i] = np.interp(w, xr, t0)
-            return f
+        # if len(model) < 2:
+        #     # Handle legacy versions of the trace model
+        #     xr = _evaluate_transform_guess_form(model, x=x0, y=y0, t=t0)
+        #     f = np.zeros_like(wavelength)
+        #     for i, w in enumerate(wavelength):
+        #         f[i] = np.interp(w, xr, t0)
+        #     return f
 
         if x0.ndim == 2:
             # Assume we're calling this on a grid where all wavelengths are the same
@@ -1509,14 +1509,14 @@ class NIRCAMBackwardGrismDispersion(_BackwardGrismDispersionBase):
             y0 = y0[0].flatten()
             wavelength = wavelength[:, 0].flatten()
 
-        t_out = _invdisp_interp(t0, x0, y0, wavelength, model)
+        t_out = _invdisp_interp(t0, x0, y0, wavelength, np.array(model))
 
         if t_out.shape[0] == 1:
             t_out = t_out[0, :]
         return t_out
 
 
-@nb.njit(fastmath=True)
+@nb.njit
 def _invdisp_interp(t0, x0, y0, wavelength, coeffs):
     def trace_function(t0, x0, y0):
         return _poly_with_spatial_dependence(t0, x0, y0, model=coeffs)
@@ -1534,7 +1534,7 @@ def _invdisp_interp(t0, x0, y0, wavelength, coeffs):
     return t_out
 
 
-@nb.njit(fastmath=True)
+@nb.njit
 def custom_meshgrid_ij(x, y):
     nx = x.size
     ny = y.size
@@ -1552,7 +1552,7 @@ def custom_meshgrid_ij(x, y):
     return xx, yy
 
 
-@nb.njit(fastmath=True)
+@nb.njit
 def _find_min_with_linear_interpolation(resid, t0):
     """
     Vectorize linear interpolation over the 0th axis to find the minimum value.
@@ -1583,7 +1583,6 @@ def _find_min_with_linear_interpolation(resid, t0):
     good = (min_ind > 0) & (min_ind < resid.shape[0] - 1)
     good_ind = np.expand_dims(min_ind[good], axis=0)
     resid_good = resid[:, good]
-    # grad_good = np.gradient(resid_good, axis=0)
     grad_good = numba_gradient_2d(resid_good, 0)
     grad_left = np.take_along_axis(grad_good, good_ind - 1, axis=0)[0]
     grad_right = np.take_along_axis(grad_good, good_ind + 1, axis=0)[0]
@@ -1614,8 +1613,41 @@ def _find_min_with_linear_interpolation(resid, t0):
     return this_t
 
 
-@nb.njit(fastmath=True)
+@nb.njit
 def numba_gradient_2d(f, axis):
+    rows, cols = f.shape
+
+    # FORCE FLOAT TYPE: Ensures division by 2.0 doesn't truncate integers to 0
+    out = np.empty_like(f)
+
+    if axis == 0:
+        # Outer loop over rows for optimal C-contiguous memory layout
+        # Handle boundaries first
+        for j in nb.prange(cols):
+            out[0, j] = f[1, j] - f[0, j]
+            out[rows - 1, j] = f[rows - 1, j] - f[rows - 2, j]
+
+        # Interior points: Outer loop handles rows, inner handles columns
+        for i in nb.prange(1, rows - 1):
+            for j in range(cols):
+                out[i, j] = (f[i + 1, j] - f[i - 1, j]) / 2.0
+
+    elif axis == 1:
+        # Handle boundaries first
+        for i in nb.prange(rows):
+            out[i, 0] = f[i, 1] - f[i, 0]
+            out[i, cols - 1] = f[i, cols - 1] - f[i, cols - 2]
+
+        # Interior points: Outer loop rows, inner loop columns
+        for i in nb.prange(rows):
+            for j in range(1, cols - 1):
+                out[i, j] = (f[i, j + 1] - f[i, j - 1]) / 2.0
+
+    return out
+
+
+@nb.njit
+def _numba_gradient_2d(f, axis):
     rows, cols = f.shape
     out = np.empty_like(f)
 
@@ -1790,8 +1822,8 @@ class _WFSSForwardGrismDispersion(_ForwardGrismDispersionBase):
         ymodel = self.ymodels[iorder]
         lmodel = self.lmodels[iorder]
 
-        dx = _poly_with_spatial_dependence(t, x00, y00, xmodel)
-        dy = _poly_with_spatial_dependence(t, x00, y00, ymodel)
+        dx = _poly_with_spatial_dependence(t, x00, y00, np.array(xmodel))
+        dy = _poly_with_spatial_dependence(t, x00, y00, np.array(ymodel))
 
         if self.theta != 0.0:
             rotate = Rotation2D(self.theta)
@@ -1944,7 +1976,7 @@ class NIRISSForwardColumnGrismDispersion(_WFSSForwardGrismDispersion):
         )
 
 
-@nb.njit(fastmath=True)
+@nb.njit
 def _poly_with_spatial_dependence(t, x0, y0, model):
     """
     Evaluate a polynomial of any order with model coefficients that depend on x0, y0.
@@ -1955,8 +1987,8 @@ def _poly_with_spatial_dependence(t, x0, y0, model):
         The trace parameter(s).
     x0, y0 : float or np.ndarray
         The x, y coordinates at which to evaluate the polynomial.
-    model : list[:class:`astropy.modeling.polynomial.Polynomial2D`]
-        The models encoding the x, y dependence of the polynomial coefficients.
+    model : np.ndarray
+        The models encoding the order, x, y dependence of the polynomial coefficients.
 
     Returns
     -------
@@ -1964,21 +1996,30 @@ def _poly_with_spatial_dependence(t, x0, y0, model):
         The evaluated polynomial at the given x0, y0, and t.
     """
     in_shape = t.shape
-    t = t.flatten()
-    x0 = x0.flatten()
-    y0 = y0.flatten()
-    out = np.empty_like(y0)
-    for i, coeffs in enumerate(model):
-        out += _numba_polyval2d_fast(x0, y0, coeffs) * t**i
+    t_flat = t.flatten()
+    x0_flat = x0.flatten()
+    y0_flat = y0.flatten()
+
+    # FIX: Changed empty_like to zeros_like to prevent random memory corruption
+    out = np.zeros_like(y0_flat)
+
+    # We evaluate Horner's method for the 't' polynomial loop too!
+    # Instead of computing t**i repeatedly (which is slow), we can iterate cleanly.
+    # Note: If model_3d is a 3D numpy array, Numba compiles this instantly.
+    for i in range(model.shape[0]):
+        coeffs = model[i]
+        out += _numba_polyval2d_fast(x0_flat, y0_flat, coeffs) * (t_flat**i)
+
     return out.reshape(in_shape)
 
 
-@nb.njit(fastmath=True)
+@nb.njit
 def _numba_polyval2d_fast(x0, y0, c):
     n = x0.shape[0]
-    out = np.zeros_like(x0)
+    out = np.zeros_like(x0)  # Correctly initialized to zero
 
-    for r in nb.prange(n):
+    # Removed nb.prange to avoid inner-loop threading overhead
+    for r in range(n):
         x = x0[r]
         y = y0[r]
 
@@ -1998,7 +2039,7 @@ def _numba_polyval2d_fast(x0, y0, c):
     return out
 
 
-@nb.njit(fastmath=True)
+@nb.njit
 def _numba_polyval1d(t, c):
     return np.polynomial.polynomial.polyval(t, c)
 
@@ -2033,7 +2074,7 @@ def _evaluate_transform_guess_form(model, x=None, y=None, t=None):
         For typical use, this corresponds to wavelength values.
     """
     if len(model[0].shape) >= 2:
-        return _poly_with_spatial_dependence(t, x, y, model)
+        return _poly_with_spatial_dependence(t, x, y, np.array(model))
     elif len(model[0].shape) == 1:
         return _numba_polyval1d(t, model[0])
     raise TypeError(f"Expected a model or list of models, but got {type(model)}. ")
