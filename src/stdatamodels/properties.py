@@ -40,39 +40,65 @@ def _cast(val, schema):
             val = val._make_array()
 
         allow_extra_columns = False
-        if "allow_extra_columns" in schema:
-            allow_extra_columns = schema["allow_extra_columns"]
-        if (
-            _is_struct_array_schema(schema)
-            and len(val)
-            and (_is_struct_array_precursor(val) or _is_struct_array(val))
+        if _is_struct_array_schema(schema) and (
+            _is_struct_array_precursor(val) or _is_struct_array(val)
         ):
+            if "allow_extra_columns" in schema:
+                allow_extra_columns = schema["allow_extra_columns"]
+
             # we are dealing with a structured array. Because we may
             # modify schema (to add shape), we make a deep copy of the
             # schema here:
             schema = copy.deepcopy(schema)
 
-            for t, v in zip(schema["datatype"], val[0], strict=False):
+            # we need to check shape of the input data (val)
+            # which may not yet be an array. Generate 2 mappings, one by
+            # name (if the input supports it) and one by index so the shape
+            # lookup below will work for inputs with and without dtypes.
+            shapes_by_name = {}
+            shapes_by_index = {}
+            if hasattr(val, "dtype"):
+                for name in val.dtype.names:
+                    # use lower here since FITS_rec is case insensitive
+                    shapes_by_name[name.lower()] = val.dtype[name].shape
+            if len(val) and len(val[0]):
+                for i, item in enumerate(val[0]):
+                    shapes_by_index[i] = np.array(item).shape
+
+            for i, t in enumerate(schema["datatype"]):
                 if not isinstance(t, Mapping):
                     continue
 
-                aval = np.asanyarray(v)
-                shape = aval.shape
-                val_ndim = len(shape)
+                name = t["name"].lower()
+
+                # do we have input sub-shapes (column shapes) to use?
+                # first check by column name
+                if name in shapes_by_name:
+                    shape = shapes_by_name[name]
+                elif i in shapes_by_index:
+                    # if no shape by name, use index. This assumes that
+                    # the order of input columns matches the schema which is all
+                    # we can do at this point.
+                    shape = shapes_by_index[i]
+                else:
+                    # no shape available, nothing to do
+                    continue
+
+                ndim = len(shape) or 1
 
                 # make sure that if 'ndim' is specified for a field,
                 # it matches the dimensionality of val's field:
-                if "ndim" in t and val_ndim != t["ndim"]:
+                if "ndim" in t and ndim != t["ndim"]:
                     raise ValueError(
                         "Array has wrong number of dimensions. Expected {}, got {}".format(
-                            t["ndim"], val_ndim
+                            t["ndim"], ndim
                         )
                     )
 
-                if "max_ndim" in t and val_ndim > t["max_ndim"]:
+                if "max_ndim" in t and ndim > t["max_ndim"]:
                     raise ValueError(
                         "Array has wrong number of dimensions. Expected <= {}, got {}".format(
-                            t["max_ndim"], val_ndim
+                            t["max_ndim"], ndim
                         )
                     )
 
