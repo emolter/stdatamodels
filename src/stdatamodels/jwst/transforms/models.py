@@ -20,6 +20,7 @@ from astropy.modeling.models import math as astmath
 from astropy.modeling.parameters import InputParameterError, Parameter
 from gwcs.spectroscopy import SellmeierGlass, SellmeierZemax, Snell3D
 from gwcs.utils import to_index
+from numba import njit
 
 from stdatamodels.properties import ListNode
 
@@ -1513,6 +1514,42 @@ def _normalize_model_for_newton(model):
     raise TypeError(f"Unexpected model coefficients: {model}")
 
 
+@njit
+def _newton_numba(c, z, threshold, maxiter, clip):
+    """Solve a polynomial with Newton's method and a Halley update."""  # numpydoc ignore: RT01
+    porder = c.shape[0] - 1
+    n_x = c.shape[1]
+    if z.ndim == 1:
+        t = np.empty_like(z)
+    else:
+        t = np.empty((z.shape[0], n_x), dtype=z.dtype)
+
+    for index in range(t.size):
+        t.flat[index] = 0.5
+        x_index = index % n_x
+        z_index = index if z.ndim == 1 else index // n_x
+
+        for _ in range(maxiter):
+            dp2 = 0.0
+            dp = 0.0
+            p = 0.0
+            for i in range(porder, -1, -1):
+                dp2 = dp2 * t.flat[index] + 2 * dp
+                dp = dp * t.flat[index] + p
+                p = p * t.flat[index] + c[i, x_index]
+
+            dt = (z.flat[z_index] - p) / dp
+            dt /= 1 + (dt / 2) * (dp2 / dp)
+            t.flat[index] += dt
+
+            if abs(dt) < threshold:
+                break
+
+    if clip:
+        return np.clip(t, 0, 1)
+    return t
+
+
 @arrayify
 def _newton(model, x, y, z, threshold=1e-3, maxiter=10, clip=True):
     """
@@ -1599,29 +1636,7 @@ def _newton(model, x, y, z, threshold=1e-3, maxiter=10, clip=True):
         t = np.where(use_t1, t1, t2)
     # Otherwise do Newton's method with Halley update to find the root
     else:
-        t = np.full_like(z, 0.5)
-        for _itr in range(maxiter):
-            # compute polynomials and derivatives
-            dp2 = 0.0  # the second derivative
-            dp = 0.0  # the first derivative
-            p = 0.0  # the polynomial
-            for i in range(porder, -1, -1):
-                dp2 = dp2 * t + 2 * dp
-                dp = dp * t + p
-                p = p * t + c[i, :]
-
-            # compute a newton step
-            dt = (z - p) / dp
-
-            # update the step for a Halley tweak
-            dt /= 1 + (dt / 2) * (dp2 / dp)
-
-            # update the position
-            t = t + dt
-
-            # clip to be in range
-            if np.amax(np.abs(dt)) < threshold:
-                break
+        return _newton_numba(c, z, threshold, maxiter, clip)
 
     # return and force to be in the domain
     if clip:

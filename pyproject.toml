@@ -13,6 +13,7 @@ dependencies = [
   "asdf-transform-schemas>=0.6.0",
   "asdf-astropy>=0.8.0",
   "numpy>=1.25",
+  "numba",
   "astropy>=6.1",
   "gwcs>=0.26.1",
 ]
